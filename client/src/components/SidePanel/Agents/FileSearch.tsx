@@ -11,11 +11,11 @@ import {
 } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
-import { MCPResourcePickerDialog, MCPAttachedFileBadge } from './MCPResources';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { MCPResourcePickerDialog, MCPAttachedFileBadge } from './MCPResources';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
-import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import { useMCPConnectionStatus } from '~/hooks/MCP/useMCPConnectionStatus';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetStartupConfig } from '~/data-provider';
@@ -187,6 +187,7 @@ function FileSearch({
           setFiles={setFiles}
           agent_id={agent_id}
           tool_resource={EToolResources.file_search}
+          fileFilter={(file) => file.source !== FileSources.mcp}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
         <div>
