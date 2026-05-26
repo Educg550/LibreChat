@@ -25,7 +25,7 @@ const {
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { createMCPUploadAdapter } = require('~/server/services/Files/mcpUploadAdapter');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
-const { addAgentResourceFile } = require('~/models');
+const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models');
 const { File: FileModel } = require('~/db/models');
 
 /**
@@ -451,6 +451,48 @@ const refreshMCPResource = async (req, res) => {
 };
 
 /**
+ * Unlinks an MCP-sourced file_id from an agent's file_search corpus.
+ * The File document itself is intentionally retained ("orphan-on-detach") so a
+ * subsequent re-attach skips ingestion.
+ * Spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ * @route DELETE /api/mcp/:serverName/resources/attach
+ */
+const detachMCPResource = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { serverName } = req.params;
+    const { uri, agentId } = req.body || {};
+    if (!uri || !agentId) {
+      return res.status(400).json({ message: 'uri and agentId are required' });
+    }
+
+    const file = await FileModel.findOne({
+      user: userId,
+      source: 'mcp',
+      'metadata.mcpServerName': serverName,
+      'metadata.mcpResource.uri': uri,
+    }).lean();
+    if (!file) {
+      return res.status(404).json({ message: 'No matching MCP file for this user' });
+    }
+
+    await removeAgentResourceFiles({
+      agent_id: agentId,
+      files: [{ tool_resource: 'file_search', file_id: file.file_id }],
+    });
+
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    logger.error('[detachMCPResource]', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * Delete MCP server
  * @route DELETE /api/mcp/servers/:serverName
  */
@@ -471,6 +513,7 @@ module.exports = {
   getMCPResources,
   attachMCPResource,
   refreshMCPResource,
+  detachMCPResource,
   getMCPServersList,
   createMCPServerController,
   getMCPServerById,

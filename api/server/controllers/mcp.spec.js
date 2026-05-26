@@ -30,9 +30,10 @@ jest.mock('~/config', () => ({
 }));
 jest.mock('~/models', () => ({
   addAgentResourceFile: jest.fn(),
+  removeAgentResourceFiles: jest.fn(),
 }));
 jest.mock('~/db/models', () => ({
-  File: { __mock: true },
+  File: { findOne: jest.fn() },
 }));
 jest.mock('~/server/services/Files/mcpUploadAdapter', () => ({
   createMCPUploadAdapter: jest.fn(() => 'mock-upload-adapter'),
@@ -40,9 +41,14 @@ jest.mock('~/server/services/Files/mcpUploadAdapter', () => ({
 
 const { getMCPManager } = require('~/config');
 const { listServerResources, ingestResource, refreshResource } = require('@librechat/api');
-const { addAgentResourceFile } = require('~/models');
+const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models');
 const { createMCPUploadAdapter } = require('~/server/services/Files/mcpUploadAdapter');
-const { getMCPResources, attachMCPResource, refreshMCPResource } = require('./mcp');
+const {
+  getMCPResources,
+  attachMCPResource,
+  refreshMCPResource,
+  detachMCPResource,
+} = require('./mcp');
 
 describe('getMCPResources', () => {
   let req, res;
@@ -239,5 +245,59 @@ describe('refreshMCPResource', () => {
     refreshResource.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
     await refreshMCPResource(req, res);
     expect(res.status).toHaveBeenCalledWith(403);
+  });
+});
+
+describe('detachMCPResource', () => {
+  let req, res, FileModel;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    req = {
+      user: { id: 'user-1' },
+      params: { serverName: 'fs' },
+      body: { uri: 'file:///a.md', agentId: 'agent-1' },
+    };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    FileModel = require('~/db/models').File;
+  });
+
+  it('returns 401 when no user', async () => {
+    req.user = null;
+    await detachMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('returns 400 when uri or agentId missing', async () => {
+    req.body = {};
+    await detachMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('returns 404 when no matching File exists for this user/server/uri', async () => {
+    FileModel.findOne.mockReturnValue({ lean: () => Promise.resolve(null) });
+    await detachMCPResource(req, res);
+    expect(FileModel.findOne).toHaveBeenCalledWith({
+      user: 'user-1',
+      source: 'mcp',
+      'metadata.mcpServerName': 'fs',
+      'metadata.mcpResource.uri': 'file:///a.md',
+    });
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('removes file_id from agent and keeps File document', async () => {
+    FileModel.findOne.mockReturnValue({
+      lean: () => Promise.resolve({ file_id: 'f-1', source: 'mcp' }),
+    });
+    removeAgentResourceFiles.mockResolvedValue({});
+
+    await detachMCPResource(req, res);
+
+    expect(removeAgentResourceFiles).toHaveBeenCalledWith({
+      agent_id: 'agent-1',
+      files: [{ tool_resource: 'file_search', file_id: 'f-1' }],
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
   });
 });

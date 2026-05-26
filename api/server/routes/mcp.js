@@ -31,6 +31,7 @@ const {
   getMCPResources,
   attachMCPResource,
   refreshMCPResource,
+  detachMCPResource,
   getMCPTools,
 } = require('~/server/controllers/mcp');
 const {
@@ -78,6 +79,7 @@ router.get('/tools', requireJwtAuth, async (req, res) => {
 router.get('/:serverName/resources', requireJwtAuth, getMCPResources);
 router.post('/:serverName/resources/attach', requireJwtAuth, attachMCPResource);
 router.post('/:serverName/resources/refresh', requireJwtAuth, refreshMCPResource);
+router.delete('/:serverName/resources/attach', requireJwtAuth, detachMCPResource);
 
 /**
  * Initiate OAuth flow
