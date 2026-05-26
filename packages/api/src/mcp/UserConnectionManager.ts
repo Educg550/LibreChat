@@ -15,7 +15,7 @@ import { mcpConfig } from './mcpConfig';
  * User connections will soon be ephemeral and not cached anymore:
  * https://github.com/danny-avila/LibreChat/discussions/8790
  */
-export abstract class UserConnectionManager {
+export class UserConnectionManager {
   // Connections shared by all users.
   public appConnections: ConnectionsRepository | null = null;
   // Connections per userId -> serverName -> connection
@@ -24,6 +24,16 @@ export abstract class UserConnectionManager {
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, Promise<MCPConnection>> = new Map();
+
+  /**
+   * Subscribes to connection lifecycle events for tracking purposes.
+   * Default no-op; overridden by `MCPManager` to track resource list changes.
+   */
+  protected wireConnectionEvents(
+    _connection: MCPConnection,
+    _userId: string,
+    _serverName: string,
+  ): void {}
 
   /** Updates the last activity timestamp for a user */
   protected updateUserLastActivity(userId: string): void {
@@ -196,6 +206,8 @@ export abstract class UserConnectionManager {
       if (!(await connection?.isConnected())) {
         throw new Error('Failed to establish connection after initialization attempt.');
       }
+
+      this.wireConnectionEvents(connection, userId, serverName);
 
       if (!this.userConnections.has(userId)) {
         this.userConnections.set(userId, new Map());

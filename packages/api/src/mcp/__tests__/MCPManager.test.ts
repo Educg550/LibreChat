@@ -1001,6 +1001,7 @@ describe('MCPManager', () => {
       isConnected: jest.fn().mockResolvedValue(true),
       isStale: jest.fn().mockReturnValue(false),
       disconnect: jest.fn(),
+      on: jest.fn(),
     } as unknown as MCPConnection;
 
     it('should pass useOAuth for servers with configured oauth and no requiresOAuth value', async () => {

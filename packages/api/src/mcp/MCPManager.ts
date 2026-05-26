@@ -27,6 +27,12 @@ import { isUserSourced, isOAuthServer } from './utils';
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
 
+  /** App-level (no specific user) owner key used in `lastListChange` */
+  public static readonly APP_OWNER_KEY = '__app__';
+
+  /** Last `notifications/resources/list_changed` timestamp per `userId::serverName` */
+  private lastListChange = new Map<string, number>();
+
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
     if (MCPManager.instance) throw new Error('MCPManager has already been initialized.');
@@ -44,7 +50,46 @@ export class MCPManager extends UserConnectionManager {
   /** Initializes the MCPManager by setting up server registry and app connections */
   public async initialize(configs: t.MCPServers) {
     await MCPServersInitializer.initialize(configs);
-    this.appConnections = new ConnectionsRepository(undefined);
+    this.appConnections = new ConnectionsRepository(undefined, undefined, (connection, serverName) =>
+      this.wireConnectionEvents(connection, MCPManager.APP_OWNER_KEY, serverName),
+    );
+  }
+
+  private listChangeKey(userId: string, serverName: string): string {
+    return `${userId}::${serverName}`;
+  }
+
+  /** Records that the resource list changed for a given (userId, serverName) */
+  public markListChanged(userId: string, serverName: string): void {
+    this.lastListChange.set(this.listChangeKey(userId, serverName), Date.now());
+  }
+
+  /** Returns the timestamp of the last list-changed event for a given (userId, serverName) */
+  public getLastListChange(userId: string, serverName: string): number | undefined {
+    return this.lastListChange.get(this.listChangeKey(userId, serverName));
+  }
+
+  /** Returns a `serverName -> timestamp` map of all list-changed events for a given userId */
+  public getLastListChangeForUser(userId: string): Record<string, number> {
+    const prefix = `${userId}::`;
+    const out: Record<string, number> = {};
+    for (const [key, value] of this.lastListChange.entries()) {
+      if (key.startsWith(prefix)) {
+        out[key.slice(prefix.length)] = value;
+      }
+    }
+    return out;
+  }
+
+  /** Subscribes to a connection's `resourcesChanged` event and updates `lastListChange` */
+  protected wireConnectionEvents(
+    connection: MCPConnection,
+    userId: string,
+    serverName: string,
+  ): void {
+    connection.on('resourcesChanged', () => {
+      this.markListChanged(userId, serverName);
+    });
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */

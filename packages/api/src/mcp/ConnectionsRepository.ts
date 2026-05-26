@@ -16,14 +16,26 @@ const CONNECT_CONCURRENCY = 3;
  * - ownerId = undefined → manages app-level servers only
  * - ownerId = userId → manages user-level and private servers for that user
  */
+export type ConnectionCreatedListener = (
+  connection: MCPConnection,
+  serverName: string,
+  ownerId: string | undefined,
+) => void;
+
 export class ConnectionsRepository {
   protected connections: Map<string, MCPConnection> = new Map();
   protected oauthOpts: t.OAuthConnectionOptions | undefined;
   private readonly ownerId: string | undefined;
+  private readonly onConnectionCreated: ConnectionCreatedListener | undefined;
 
-  constructor(ownerId?: string, oauthOpts?: t.OAuthConnectionOptions) {
+  constructor(
+    ownerId?: string,
+    oauthOpts?: t.OAuthConnectionOptions,
+    onConnectionCreated?: ConnectionCreatedListener,
+  ) {
     this.ownerId = ownerId;
     this.oauthOpts = oauthOpts;
+    this.onConnectionCreated = onConnectionCreated;
   }
 
   /** Returns the number of active connections in this repository */
@@ -91,6 +103,7 @@ export class ConnectionsRepository {
     );
 
     this.connections.set(serverName, connection);
+    this.onConnectionCreated?.(connection, serverName, this.ownerId);
     return connection;
   }
 
