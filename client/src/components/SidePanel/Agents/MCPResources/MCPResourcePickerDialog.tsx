@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
+import { dataService, QueryKeys } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import {
-  useAttachMCPResourceMutation,
-  useDetachMCPResourceMutation,
-} from '~/data-provider/MCP/queries';
 import { useLocalize } from '~/hooks';
 import { MCPResourceList } from './MCPResourceList';
 
@@ -28,7 +24,10 @@ export function MCPResourcePickerDialog({
   const queryClient = useQueryClient();
   const [activeServer, setActiveServer] = useState<string>(mcpServerNames[0] ?? '');
   const [selectionByServer, setSelectionByServer] = useState<Record<string, Set<string>>>(
-    () => Object.fromEntries(mcpServerNames.map((s) => [s, new Set<string>()])),
+    () =>
+      Object.fromEntries(
+        mcpServerNames.map((s) => [s, new Set(attachedByServer[s] ?? new Set<string>())]),
+      ),
   );
   const [isSaving, setIsSaving] = useState(false);
   const [failures, setFailures] = useState<string[]>([]);
@@ -39,8 +38,14 @@ export function MCPResourcePickerDialog({
     }
   }, [mcpServerNames, activeServer]);
 
-  const attach = useAttachMCPResourceMutation(activeServer);
-  const detach = useDetachMCPResourceMutation(activeServer);
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectionByServer(
+      Object.fromEntries(
+        mcpServerNames.map((s) => [s, new Set(attachedByServer[s] ?? new Set<string>())]),
+      ),
+    );
+  }, [isOpen, mcpServerNames, attachedByServer]);
 
   const handleToggle = (uri: string, next: boolean) => {
     setSelectionByServer((prev) => {
@@ -55,28 +60,36 @@ export function MCPResourcePickerDialog({
     setIsSaving(true);
     setFailures([]);
     const localFailures: string[] = [];
+    const touchedServers: string[] = [];
     for (const serverName of mcpServerNames) {
       const selection = selectionByServer[serverName] ?? new Set<string>();
       const attached = attachedByServer[serverName] ?? new Set<string>();
       const toAttach = [...selection].filter((u) => !attached.has(u));
       const toDetach = [...attached].filter((u) => !selection.has(u));
 
+      if (toAttach.length || toDetach.length) {
+        touchedServers.push(serverName);
+      }
+
       for (const uri of toAttach) {
         try {
-          await attach.mutateAsync({ uri, agentId });
+          await dataService.attachMCPResource(serverName, { uri, agentId });
         } catch {
           localFailures.push(`attach:${serverName}:${uri}`);
         }
       }
       for (const uri of toDetach) {
         try {
-          await detach.mutateAsync({ uri, agentId });
+          await dataService.detachMCPResource(serverName, { uri, agentId });
         } catch {
           localFailures.push(`detach:${serverName}:${uri}`);
         }
       }
     }
     queryClient.invalidateQueries([QueryKeys.agent, agentId]);
+    for (const serverName of touchedServers) {
+      queryClient.invalidateQueries([QueryKeys.mcpResources, serverName]);
+    }
     setIsSaving(false);
     setFailures(localFailures);
     if (!localFailures.length) setIsOpen(false);
