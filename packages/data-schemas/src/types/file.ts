@@ -1,5 +1,5 @@
 import { Document, Types } from 'mongoose';
-import type { CodeEnvRef } from 'librechat-data-provider';
+import type { CodeEnvRef, MCPResourceMetadata } from 'librechat-data-provider';
 
 export interface IMongoFile extends Omit<Document, 'model'> {
   user: Types.ObjectId;
@@ -70,6 +70,9 @@ export interface IMongoFile extends Omit<Document, 'model'> {
      * derive the sessionKey explicitly.
      */
     codeEnvRef?: CodeEnvRef;
+    mcpServerName?: string;
+    mcpResource?: MCPResourceMetadata;
+    mcpLastIndexedAt?: Date;
   };
   expiresAt?: Date;
   expiredAt?: Date | null;

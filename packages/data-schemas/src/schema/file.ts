@@ -2,6 +2,32 @@ import mongoose, { Schema } from 'mongoose';
 import { FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types';
 
+const mcpResourceIcon = new Schema(
+  {
+    src: { type: String, required: true },
+    mimeType: { type: String },
+    sizes: [{ type: String }],
+  },
+  { _id: false },
+);
+
+/**
+ * Mirrors the MCP "Resource" definition from
+ * https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ */
+const mcpResourceSchema = new Schema(
+  {
+    uri: { type: String, required: true },
+    name: { type: String, required: true },
+    title: { type: String },
+    description: { type: String },
+    icons: [mcpResourceIcon],
+    mimeType: { type: String },
+    size: { type: Number },
+  },
+  { _id: false },
+);
+
 const file: Schema<IMongoFile> = new Schema(
   {
     user: {
@@ -121,11 +147,7 @@ const file: Schema<IMongoFile> = new Schema(
       codeEnvRef: {
         type: new Schema(
           {
-            kind: {
-              type: String,
-              enum: ['skill', 'agent', 'user'],
-              required: true,
-            },
+            kind: { type: String, enum: ['skill', 'agent', 'user'], required: true },
             id: { type: String, required: true },
             storage_session_id: { type: String, required: true },
             file_id: { type: String, required: true },
@@ -135,6 +157,9 @@ const file: Schema<IMongoFile> = new Schema(
         ),
         default: undefined,
       },
+      mcpServerName: { type: String },
+      mcpResource: { type: mcpResourceSchema, default: undefined },
+      mcpLastIndexedAt: { type: Date },
     },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from
@@ -163,6 +188,14 @@ file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },
   { unique: true, partialFilterExpression: { context: FileContext.execute_code } },
+);
+file.index(
+  { user: 1, 'metadata.mcpServerName': 1, 'metadata.mcpResource.uri': 1 },
+  {
+    unique: true,
+    partialFilterExpression: { source: 'mcp' },
+    name: 'mcp_resource_unique_per_user',
+  },
 );
 
 export default file;
