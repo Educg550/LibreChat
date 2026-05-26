@@ -212,6 +212,13 @@ export const mcpOAuthBind = (serverName: string) => `${BASE_URL}/api/mcp/${serve
 export const actionOAuthBind = (actionId: string) =>
   `${BASE_URL}/api/actions/${actionId}/oauth/bind`;
 
+export const mcpResources = (serverName: string) =>
+  `${BASE_URL}/api/mcp/${encodeURIComponent(serverName)}/resources`;
+export const mcpResourceAttach = (serverName: string) =>
+  `${BASE_URL}/api/mcp/${encodeURIComponent(serverName)}/resources/attach`;
+export const mcpResourceRefresh = (serverName: string) =>
+  `${BASE_URL}/api/mcp/${encodeURIComponent(serverName)}/resources/refresh`;
+
 export const config = () => `${BASE_URL}/api/config`;
 
 export const prompts = () => `${BASE_URL}/api/prompts`;

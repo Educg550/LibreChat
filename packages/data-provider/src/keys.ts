@@ -62,6 +62,7 @@ export enum QueryKeys {
   /* MCP Servers */
   mcpServers = 'mcpServers',
   mcpServer = 'mcpServer',
+  mcpResources = 'mcpResources',
   /* Active Jobs */
   activeJobs = 'activeJobs',
   /* Agent API Keys */
@@ -109,6 +110,9 @@ export enum MutationKeys {
   revertAgentVersion = 'revertAgentVersion',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
+  attachMCPResource = 'attachMCPResource',
+  refreshMCPResource = 'refreshMCPResource',
+  detachMCPResource = 'detachMCPResource',
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
   updateMemoryPreferences = 'updateMemoryPreferences',

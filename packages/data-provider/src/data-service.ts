@@ -8,6 +8,7 @@ import * as q from './types/queries';
 import * as f from './types/files';
 import * as sk from './types/skills';
 import * as mcp from './types/mcpServers';
+import * as mcpResources from './types/mcp-resources';
 import * as config from './config';
 import request from './request';
 import * as s from './schemas';
@@ -656,6 +657,39 @@ export const updateMCPServer = async (
  */
 export const deleteMCPServer = async (serverName: string): Promise<{ success: boolean }> => {
   return request.delete(endpoints.mcpServer(serverName));
+};
+
+/**
+ * MCP Resources
+ */
+
+export const listMCPResources = (
+  serverName: string,
+  cursor?: string,
+): Promise<mcpResources.MCPResourcesListResponse> => {
+  const url = endpoints.mcpResources(serverName);
+  return request.get(cursor ? `${url}?cursor=${encodeURIComponent(cursor)}` : url);
+};
+
+export const attachMCPResource = (
+  serverName: string,
+  payload: mcpResources.MCPResourceAttachPayload,
+): Promise<mcpResources.MCPResourceAttachResponse> => {
+  return request.post(endpoints.mcpResourceAttach(serverName), payload);
+};
+
+export const refreshMCPResource = (
+  serverName: string,
+  payload: mcpResources.MCPResourceRefreshPayload,
+): Promise<mcpResources.MCPResourceRefreshResponse> => {
+  return request.post(endpoints.mcpResourceRefresh(serverName), payload);
+};
+
+export const detachMCPResource = (
+  serverName: string,
+  payload: mcpResources.MCPResourceDetachPayload,
+): Promise<{ ok: true }> => {
+  return request.deleteWithOptions(endpoints.mcpResourceAttach(serverName), { data: payload });
 };
 
 /**
