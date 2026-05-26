@@ -33,6 +33,7 @@ const {
   refreshMCPResource,
   detachMCPResource,
   getMCPTools,
+  getMCPConnectionStatus,
 } = require('~/server/controllers/mcp');
 const {
   getOAuthReconnectionManager,
@@ -631,50 +632,7 @@ router.post(
  * Get connection status for all MCP servers
  * This endpoint returns all app level and user-scoped connection statuses from MCPManager without disconnecting idle connections
  */
-router.get('/connection/status', requireJwtAuth, async (req, res) => {
-  try {
-    const user = req.user;
-
-    if (!user?.id) {
-      return res.status(401).json({ error: 'User not authenticated' });
-    }
-
-    const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
-      user.id,
-      { role: user.role, tenantId: getTenantId() },
-    );
-    const connectionStatus = {};
-
-    for (const [serverName, config] of Object.entries(mcpConfig)) {
-      try {
-        connectionStatus[serverName] = await getServerConnectionStatus(
-          user.id,
-          serverName,
-          config,
-          appConnections,
-          userConnections,
-          oauthServers,
-        );
-      } catch (error) {
-        const message = `Failed to get status for server "${serverName}"`;
-        logger.error(`[MCP Connection Status] ${message},`, error);
-        connectionStatus[serverName] = {
-          connectionState: 'error',
-          requiresOAuth: oauthServers.has(serverName),
-          error: message,
-        };
-      }
-    }
-
-    res.json({
-      success: true,
-      connectionStatus,
-    });
-  } catch (error) {
-    logger.error('[MCP Connection Status] Failed to get connection status', error);
-    res.status(500).json({ error: 'Failed to get connection status' });
-  }
-});
+router.get('/connection/status', requireJwtAuth, getMCPConnectionStatus);
 
 /**
  * Get connection status for a single MCP server

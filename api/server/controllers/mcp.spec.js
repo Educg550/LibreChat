@@ -1,5 +1,6 @@
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn(), info: jest.fn() },
+  getTenantId: jest.fn(() => 'tenant-1'),
 }));
 jest.mock('@librechat/api', () => ({
   listServerResources: jest.fn(),
@@ -19,6 +20,8 @@ jest.mock('~/server/services/MCP', () => ({
   resolveConfigServers: jest.fn(),
   resolveMcpConfigNames: jest.fn(),
   resolveAllMcpConfigs: jest.fn(),
+  getMCPSetupData: jest.fn(),
+  getServerConnectionStatus: jest.fn(),
 }));
 jest.mock('~/server/services/Config', () => ({
   cacheMCPServerTools: jest.fn(),
@@ -48,6 +51,7 @@ const {
   attachMCPResource,
   refreshMCPResource,
   detachMCPResource,
+  getMCPConnectionStatus,
 } = require('./mcp');
 
 describe('getMCPResources', () => {
@@ -299,5 +303,80 @@ describe('detachMCPResource', () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+});
+
+describe('getMCPConnectionStatus', () => {
+  let req, res;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    req = { user: { id: 'user-1', role: 'USER' } };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  });
+
+  it('returns lastListChange and per-server capabilities along with connectionStatus', async () => {
+    const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
+    getMCPSetupData.mockResolvedValue({
+      mcpConfig: { fs: {}, other: {} },
+      appConnections: new Map(),
+      userConnections: new Map(),
+      oauthServers: new Set(),
+    });
+    getServerConnectionStatus.mockResolvedValue({
+      connectionState: 'connected',
+      requiresOAuth: false,
+    });
+
+    const mgr = {
+      getLastListChangeForUser: jest.fn().mockReturnValue({ fs: 1234567890 }),
+      getConnection: jest.fn().mockImplementation(async ({ serverName }) => {
+        if (serverName === 'fs') {
+          return {
+            client: { getServerCapabilities: () => ({ resources: { listChanged: true } }) },
+          };
+        }
+        return { client: { getServerCapabilities: () => ({ tools: {} }) } };
+      }),
+    };
+    getMCPManager.mockReturnValue(mgr);
+
+    await getMCPConnectionStatus(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        lastListChange: { fs: 1234567890 },
+        capabilities: {
+          fs: { resources: { listChanged: true } },
+          other: { tools: {} },
+        },
+      }),
+    );
+  });
+
+  it('omits capabilities for servers whose connection lookup throws', async () => {
+    const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
+    getMCPSetupData.mockResolvedValue({
+      mcpConfig: { fs: {}, broken: {} },
+      appConnections: new Map(),
+      userConnections: new Map(),
+      oauthServers: new Set(),
+    });
+    getServerConnectionStatus.mockResolvedValue({ connectionState: 'connected' });
+
+    const mgr = {
+      getLastListChangeForUser: jest.fn().mockReturnValue({}),
+      getConnection: jest.fn().mockImplementation(async ({ serverName }) => {
+        if (serverName === 'broken') throw new Error('not connected');
+        return { client: { getServerCapabilities: () => ({ resources: {} }) } };
+      }),
+    };
+    getMCPManager.mockReturnValue(mgr);
+
+    await getMCPConnectionStatus(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.capabilities).toEqual({ fs: { resources: {} } });
+    expect(payload.capabilities.broken).toBeUndefined();
   });
 });

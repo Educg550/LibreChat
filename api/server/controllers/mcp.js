@@ -5,7 +5,7 @@
  * @import { MCPServerRegistry } from '@librechat/api'
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   MCPErrorCodes,
   ingestResource,
@@ -18,9 +18,11 @@ const {
 } = require('@librechat/api');
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
 const {
+  getMCPSetupData,
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  getServerConnectionStatus,
 } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { createMCPUploadAdapter } = require('~/server/services/Files/mcpUploadAdapter');
@@ -493,6 +495,74 @@ const detachMCPResource = async (req, res) => {
 };
 
 /**
+ * Get connection status for all MCP servers along with per-server capabilities
+ * and a list-change timestamp map. Returns app-level and user-scoped connection
+ * statuses from MCPManager without disconnecting idle connections.
+ * listChanged spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ * @route GET /api/mcp/connection/status
+ */
+const getMCPConnectionStatus = async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
+      user.id,
+      { role: user.role, tenantId: getTenantId() },
+    );
+    const connectionStatus = {};
+
+    for (const [serverName, config] of Object.entries(mcpConfig)) {
+      try {
+        connectionStatus[serverName] = await getServerConnectionStatus(
+          user.id,
+          serverName,
+          config,
+          appConnections,
+          userConnections,
+          oauthServers,
+        );
+      } catch (error) {
+        const message = `Failed to get status for server "${serverName}"`;
+        logger.error(`[MCP Connection Status] ${message},`, error);
+        connectionStatus[serverName] = {
+          connectionState: 'error',
+          requiresOAuth: oauthServers.has(serverName),
+          error: message,
+        };
+      }
+    }
+
+    const mcpManager = getMCPManager();
+    const lastListChange = mcpManager.getLastListChangeForUser(user.id);
+
+    const capabilities = {};
+    for (const serverName of Object.keys(mcpConfig)) {
+      try {
+        const conn = await mcpManager.getConnection({ serverName, user });
+        const caps = conn.client.getServerCapabilities?.();
+        if (caps) capabilities[serverName] = caps;
+      } catch {
+        // server not connected (or OAuth pending) — omit; client sees this via connectionStatus
+      }
+    }
+
+    return res.json({
+      success: true,
+      connectionStatus,
+      lastListChange,
+      capabilities,
+    });
+  } catch (error) {
+    logger.error('[MCP Connection Status] Failed to get connection status', error);
+    return res.status(500).json({ error: 'Failed to get connection status' });
+  }
+};
+
+/**
  * Delete MCP server
  * @route DELETE /api/mcp/servers/:serverName
  */
@@ -519,4 +589,5 @@ module.exports = {
   getMCPServerById,
   updateMCPServerController,
   deleteMCPServerController,
+  getMCPConnectionStatus,
 };
