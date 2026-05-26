@@ -1,5 +1,5 @@
-import { useInfiniteQuery, useQuery, UseInfiniteQueryOptions, UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient, UseInfiniteQueryOptions, UseQueryOptions, UseMutationOptions, QueryObserverResult } from '@tanstack/react-query';
+import { QueryKeys, MutationKeys, dataService } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 
 /**
@@ -65,3 +65,64 @@ export const useMCPResourcesQuery = (
       ...config,
     },
   );
+
+/**
+ * Attaches an MCP resource to an agent's file_search corpus.
+ *
+ * Spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ */
+export const useAttachMCPResourceMutation = (
+  serverName: string,
+  options?: UseMutationOptions<t.MCPResourceAttachResponse, unknown, t.MCPResourceAttachPayload>,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<t.MCPResourceAttachResponse, unknown, t.MCPResourceAttachPayload>(
+    [MutationKeys.attachMCPResource, serverName],
+    (payload) => dataService.attachMCPResource(serverName, payload),
+    {
+      ...options,
+      onSuccess: (data, vars, ctx) => {
+        queryClient.invalidateQueries([QueryKeys.agent, vars.agentId]);
+        options?.onSuccess?.(data, vars, ctx);
+      },
+    },
+  );
+};
+
+/**
+ * Re-fetches and re-indexes a previously-attached MCP resource.
+ *
+ * Spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ */
+export const useRefreshMCPResourceMutation = (
+  serverName: string,
+  options?: UseMutationOptions<t.MCPResourceRefreshResponse, unknown, t.MCPResourceRefreshPayload>,
+) =>
+  useMutation<t.MCPResourceRefreshResponse, unknown, t.MCPResourceRefreshPayload>(
+    [MutationKeys.refreshMCPResource, serverName],
+    (payload) => dataService.refreshMCPResource(serverName, payload),
+    options,
+  );
+
+/**
+ * Unlinks an MCP-sourced file_id from an agent (orphan-on-detach).
+ *
+ * Spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ */
+export const useDetachMCPResourceMutation = (
+  serverName: string,
+  options?: UseMutationOptions<{ ok: true }, unknown, t.MCPResourceDetachPayload>,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<{ ok: true }, unknown, t.MCPResourceDetachPayload>(
+    [MutationKeys.detachMCPResource, serverName],
+    (payload) => dataService.detachMCPResource(serverName, payload),
+    {
+      ...options,
+      onSuccess: (data, vars, ctx) => {
+        queryClient.invalidateQueries([QueryKeys.agent, vars.agentId]);
+        options?.onSuccess?.(data, vars, ctx);
+      },
+    },
+  );
+};
