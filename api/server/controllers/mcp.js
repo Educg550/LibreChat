@@ -8,6 +8,7 @@
 const { logger } = require('@librechat/data-schemas');
 const {
   MCPErrorCodes,
+  ingestResource,
   listServerResources,
   redactServerSecrets,
   redactAllServerSecrets,
@@ -21,7 +22,10 @@ const {
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+const { createMCPUploadAdapter } = require('~/server/services/Files/mcpUploadAdapter');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
+const { addAgentResourceFile } = require('~/models');
+const { File: FileModel } = require('~/db/models');
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
@@ -338,6 +342,62 @@ const getMCPResources = async (req, res) => {
 };
 
 /**
+ * Ingest an MCP resource into the user's file store and attach the resulting
+ * file_id to the agent's `tool_resources.file_search.file_ids[]`.
+ * Spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ * @route POST /api/mcp/:serverName/resources/attach
+ */
+const attachMCPResource = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { serverName } = req.params;
+    const { uri, agentId } = req.body || {};
+    if (!uri || !agentId) {
+      return res.status(400).json({ message: 'uri and agentId are required' });
+    }
+
+    const mcpManager = getMCPManager();
+    const connection = await mcpManager.getConnection({ serverName, user: req.user });
+
+    const caps = connection.client.getServerCapabilities?.();
+    if (!caps?.resources) {
+      return res.status(404).json({ code: 'RESOURCES_UNSUPPORTED', serverName });
+    }
+
+    const ingest = await ingestResource({
+      userId,
+      serverName,
+      uri,
+      client: connection.client,
+      uploadAdapter: createMCPUploadAdapter(req.config),
+      fileModel: FileModel,
+    });
+
+    await addAgentResourceFile({
+      agent_id: agentId,
+      tool_resource: 'file_search',
+      file_id: ingest.file_id,
+      updatingUserId: userId,
+    });
+
+    return res.status(200).json({ file_id: ingest.file_id, created: ingest.created });
+  } catch (error) {
+    if (error?.code === -32002) {
+      return res.status(404).json({ code: 'RESOURCE_NOT_FOUND' });
+    }
+    if (error?.code === -32603) {
+      return res.status(502).json({ message: error.message });
+    }
+    logger.error('[attachMCPResource]', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * Delete MCP server
  * @route DELETE /api/mcp/servers/:serverName
  */
@@ -356,6 +416,7 @@ const deleteMCPServerController = async (req, res) => {
 module.exports = {
   getMCPTools,
   getMCPResources,
+  attachMCPResource,
   getMCPServersList,
   createMCPServerController,
   getMCPServerById,

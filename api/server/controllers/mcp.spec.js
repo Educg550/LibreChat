@@ -3,6 +3,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 jest.mock('@librechat/api', () => ({
   listServerResources: jest.fn(),
+  ingestResource: jest.fn(),
   MCPErrorCodes: {},
   redactServerSecrets: jest.fn((v) => v),
   redactAllServerSecrets: jest.fn((v) => v),
@@ -26,10 +27,21 @@ jest.mock('~/config', () => ({
   getMCPManager: jest.fn(),
   getMCPServersRegistry: jest.fn(),
 }));
+jest.mock('~/models', () => ({
+  addAgentResourceFile: jest.fn(),
+}));
+jest.mock('~/db/models', () => ({
+  File: { __mock: true },
+}));
+jest.mock('~/server/services/Files/mcpUploadAdapter', () => ({
+  createMCPUploadAdapter: jest.fn(() => 'mock-upload-adapter'),
+}));
 
 const { getMCPManager } = require('~/config');
-const { listServerResources } = require('@librechat/api');
-const { getMCPResources } = require('./mcp');
+const { listServerResources, ingestResource } = require('@librechat/api');
+const { addAgentResourceFile } = require('~/models');
+const { createMCPUploadAdapter } = require('~/server/services/Files/mcpUploadAdapter');
+const { getMCPResources, attachMCPResource } = require('./mcp');
 
 describe('getMCPResources', () => {
   let req, res;
@@ -92,5 +104,95 @@ describe('getMCPResources', () => {
     await getMCPResources(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+});
+
+describe('attachMCPResource', () => {
+  let req, res, fakeClient;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fakeClient = { getServerCapabilities: () => ({ resources: {} }) };
+    req = {
+      user: { id: 'user-1' },
+      params: { serverName: 'fs' },
+      body: { uri: 'file:///a.md', agentId: 'agent-1' },
+      config: { fileStrategy: 'local' },
+    };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    getMCPManager.mockReturnValue({
+      getConnection: jest.fn().mockResolvedValue({ client: fakeClient }),
+    });
+  });
+
+  it('returns 401 when no user', async () => {
+    req.user = null;
+    await attachMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('returns 400 when uri or agentId missing', async () => {
+    req.body = {};
+    await attachMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('returns 404 RESOURCES_UNSUPPORTED if server lacks capability', async () => {
+    fakeClient.getServerCapabilities = () => ({});
+    await attachMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ code: 'RESOURCES_UNSUPPORTED', serverName: 'fs' });
+  });
+
+  it('ingests resource and appends file_id to agent file_search', async () => {
+    ingestResource.mockResolvedValue({ file_id: 'f-1', created: true, userId: 'user-1' });
+    addAgentResourceFile.mockResolvedValue({});
+
+    await attachMCPResource(req, res);
+
+    expect(createMCPUploadAdapter).toHaveBeenCalledWith(req.config);
+    expect(ingestResource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        serverName: 'fs',
+        uri: 'file:///a.md',
+        client: fakeClient,
+        uploadAdapter: 'mock-upload-adapter',
+        fileModel: expect.anything(),
+      }),
+    );
+    expect(addAgentResourceFile).toHaveBeenCalledWith({
+      agent_id: 'agent-1',
+      tool_resource: 'file_search',
+      file_id: 'f-1',
+      updatingUserId: 'user-1',
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ file_id: 'f-1', created: true });
+  });
+
+  it('returns 200 created=false when ingestResource dedupes existing file', async () => {
+    ingestResource.mockResolvedValue({ file_id: 'f-existing', created: false, userId: 'user-1' });
+    addAgentResourceFile.mockResolvedValue({});
+
+    await attachMCPResource(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ file_id: 'f-existing', created: false });
+    expect(addAgentResourceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ file_id: 'f-existing' }),
+    );
+  });
+
+  it('maps -32002 RESOURCE_NOT_FOUND to 404', async () => {
+    ingestResource.mockRejectedValue(Object.assign(new Error('not found'), { code: -32002 }));
+    await attachMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ code: 'RESOURCE_NOT_FOUND' });
+  });
+
+  it('maps -32603 INTERNAL_ERROR to 502', async () => {
+    ingestResource.mockRejectedValue(Object.assign(new Error('boom'), { code: -32603 }));
+    await attachMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(502);
   });
 });
