@@ -9,6 +9,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   MCPErrorCodes,
   ingestResource,
+  refreshResource,
   listServerResources,
   redactServerSecrets,
   redactAllServerSecrets,
@@ -398,6 +399,58 @@ const attachMCPResource = async (req, res) => {
 };
 
 /**
+ * Re-fetch an MCP resource that was previously ingested for the requesting
+ * user and replace its stored content + metadata.
+ * Spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ * @route POST /api/mcp/:serverName/resources/refresh
+ */
+const refreshMCPResource = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { serverName } = req.params;
+    const { uri } = req.body || {};
+    if (!uri) {
+      return res.status(400).json({ message: 'uri is required' });
+    }
+
+    const mcpManager = getMCPManager();
+    const connection = await mcpManager.getConnection({ serverName, user: req.user });
+
+    const caps = connection.client.getServerCapabilities?.();
+    if (!caps?.resources) {
+      return res.status(404).json({ code: 'RESOURCES_UNSUPPORTED', serverName });
+    }
+
+    const result = await refreshResource({
+      userId,
+      serverName,
+      uri,
+      client: connection.client,
+      uploadAdapter: createMCPUploadAdapter(req.config),
+      fileModel: FileModel,
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    if (error?.status === 403) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    if (error?.code === -32002) {
+      return res.status(404).json({ code: 'RESOURCE_NOT_FOUND' });
+    }
+    if (error?.code === -32603) {
+      return res.status(502).json({ message: error.message });
+    }
+    logger.error('[refreshMCPResource]', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * Delete MCP server
  * @route DELETE /api/mcp/servers/:serverName
  */
@@ -417,6 +470,7 @@ module.exports = {
   getMCPTools,
   getMCPResources,
   attachMCPResource,
+  refreshMCPResource,
   getMCPServersList,
   createMCPServerController,
   getMCPServerById,

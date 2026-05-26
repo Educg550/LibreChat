@@ -3,7 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { IMongoFile } from '@librechat/data-schemas';
 import { startFixtureServer } from './__fixtures__/testServer';
-import { listServerResources, readResource, ingestResource } from './resources';
+import { listServerResources, readResource, ingestResource, refreshResource } from './resources';
 
 describe('listServerResources', () => {
   it('returns the resources reported by the server (no cursor)', async () => {
@@ -205,6 +205,144 @@ describe('ingestResource', () => {
     expect(Buffer.isBuffer(call.buffer)).toBe(true);
     expect(call.buffer.equals(bytes)).toBe(true);
     expect(call.mimeType).toBe('image/png');
+
+    await client.close();
+    await fx.close();
+  });
+});
+
+describe('refreshResource', () => {
+  let mongod2: MongoMemoryServer;
+  let TestFileModel2: mongoose.Model<IMongoFile>;
+
+  beforeAll(async () => {
+    if (!mongoose.connection.readyState) {
+      mongod2 = await MongoMemoryServer.create();
+      await mongoose.connect(mongod2.getUri());
+    }
+    const schema = new mongoose.Schema<IMongoFile>({
+      user: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+      file_id: { type: String, required: true, index: true },
+      bytes: { type: Number, required: true },
+      filename: { type: String, required: true },
+      filepath: { type: String, required: true },
+      object: { type: String, required: true, default: 'file' },
+      type: { type: String, required: true },
+      source: { type: String, required: true },
+      embedded: Boolean,
+      status: String,
+      usage: { type: Number, required: true, default: 0 },
+      metadata: { type: mongoose.Schema.Types.Mixed },
+    });
+    TestFileModel2 = mongoose.model<IMongoFile>('RefreshResourceTestFile', schema);
+  });
+
+  afterAll(async () => {
+    if (mongod2) {
+      await mongoose.disconnect();
+      await mongod2.stop();
+    }
+  });
+
+  it('refreshes content + updates mcpLastIndexedAt; returns status=refreshed', async () => {
+    const fx = await startFixtureServer([
+      {
+        uri: 'file:///r.md',
+        name: 'r.md',
+        mimeType: 'text/markdown',
+        content: { kind: 'text', text: 'v1' },
+      },
+    ]);
+    const client = new Client({ name: 'test', version: '0' }, { capabilities: {} });
+    await client.connect(fx.clientTransport);
+
+    const userId = new mongoose.Types.ObjectId().toString();
+    const initial = await TestFileModel2.create({
+      user: userId,
+      file_id: 'fid-r',
+      bytes: 2,
+      filename: 'r.md',
+      filepath: '/tmp/r.md',
+      object: 'file',
+      type: 'text/markdown',
+      source: 'mcp',
+      status: 'ready',
+      usage: 0,
+      metadata: {
+        mcpServerName: 'fs',
+        mcpResource: { uri: 'file:///r.md', name: 'r.md', mimeType: 'text/markdown', size: 2 },
+        mcpLastIndexedAt: new Date(Date.now() - 60_000),
+      },
+    });
+
+    fx.setResources([
+      {
+        uri: 'file:///r.md',
+        name: 'r.md',
+        mimeType: 'text/markdown',
+        content: { kind: 'text', text: 'v2-bigger' },
+      },
+    ]);
+
+    const uploadSpy = jest.fn().mockImplementation(async ({ buffer }) => ({
+      file_id: 'fid-r',
+      bytes: buffer.length,
+      filepath: '/tmp/r.md',
+      embedded: true,
+    }));
+
+    const result = await refreshResource({
+      userId,
+      serverName: 'fs',
+      uri: 'file:///r.md',
+      client,
+      uploadAdapter: uploadSpy,
+      fileModel: TestFileModel2,
+    });
+
+    expect(result.status).toBe('refreshed');
+    expect(result.file_id).toBe('fid-r');
+    expect(uploadSpy).toHaveBeenCalledTimes(1);
+
+    const reloaded = await TestFileModel2.findById(initial._id).lean<IMongoFile | null>();
+    expect(reloaded?.bytes).toBe('v2-bigger'.length);
+    const reloadedMetadata = reloaded?.metadata as { mcpLastIndexedAt: Date } | undefined;
+    const initialMetadata = initial.metadata as unknown as { mcpLastIndexedAt: Date };
+    expect(new Date(reloadedMetadata!.mcpLastIndexedAt).getTime()).toBeGreaterThan(
+      new Date(initialMetadata.mcpLastIndexedAt).getTime(),
+    );
+
+    await client.close();
+    await fx.close();
+  });
+
+  it('throws status=403 when no matching File for this user/server/uri exists', async () => {
+    const fx = await startFixtureServer([
+      {
+        uri: 'file:///x.md',
+        name: 'x.md',
+        mimeType: 'text/markdown',
+        content: { kind: 'text', text: 'x' },
+      },
+    ]);
+    const client = new Client({ name: 'test', version: '0' }, { capabilities: {} });
+    await client.connect(fx.clientTransport);
+
+    const userId = new mongoose.Types.ObjectId().toString();
+    const noop = jest.fn();
+
+    await expect(
+      refreshResource({
+        userId,
+        serverName: 'fs',
+        uri: 'file:///x.md',
+        client,
+        uploadAdapter: noop,
+        fileModel: TestFileModel2,
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+
+    expect(noop).not.toHaveBeenCalled();
 
     await client.close();
     await fx.close();

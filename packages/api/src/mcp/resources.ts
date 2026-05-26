@@ -201,6 +201,83 @@ export async function ingestResource(args: IngestResourceArgs): Promise<IngestRe
   return { userId: args.userId, file_id: uploaded.file_id, created: true };
 }
 
+export type RefreshResourceArgs = IngestResourceArgs;
+
+export type RefreshResourceResult = {
+  file_id: string;
+  lastIndexedAt: Date;
+  status: 'refreshed';
+};
+
+/**
+ * Re-fetches an MCP resource that was previously ingested for this user
+ * and replaces the stored content + metadata. Always re-runs upload + embed —
+ * no content-hash short-circuit (per spec design).
+ *
+ * Spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ *
+ * Throws an error with `status: 403` if the user does not own a File matching
+ * `(serverName, uri)` with `source='mcp'`.
+ */
+export async function refreshResource(args: RefreshResourceArgs): Promise<RefreshResourceResult> {
+  const existing = await args.fileModel.findOne({
+    user: args.userId,
+    source: FileSources.mcp,
+    'metadata.mcpServerName': args.serverName,
+    'metadata.mcpResource.uri': args.uri,
+  });
+  if (!existing) {
+    const err: Error & { status?: number } = new Error('File not found');
+    err.status = 403;
+    throw err;
+  }
+
+  const [meta, body] = await Promise.all([
+    fetchListItemMetadata(args.client, args.uri),
+    readResource({ client: args.client, uri: args.uri }),
+  ]);
+  const first = body.contents[0];
+  if (!first) throw new Error(`Empty contents from ${args.uri}`);
+  const buffer =
+    'text' in first ? Buffer.from(first.text, 'utf8') : Buffer.from(first.blob, 'base64');
+  const mimeType = first.mimeType ?? meta.mimeType ?? 'application/octet-stream';
+
+  const uploaded = await args.uploadAdapter({
+    buffer,
+    filename: existing.filename,
+    mimeType,
+    userId: args.userId,
+  });
+
+  const now = new Date();
+  const resourceMetadata: MCPResourceMetadata = {
+    uri: meta.uri,
+    name: meta.name,
+    title: meta.title,
+    description: meta.description,
+    icons: meta.icons,
+    mimeType,
+    size: meta.size ?? buffer.length,
+  };
+
+  existing.bytes = uploaded.bytes;
+  existing.filepath = uploaded.filepath;
+  existing.storageKey = uploaded.storageKey;
+  existing.storageRegion = uploaded.storageRegion;
+  existing.embedded = uploaded.embedded;
+  existing.type = mimeType;
+  existing.metadata = {
+    ...(existing.metadata ?? {}),
+    mcpServerName: args.serverName,
+    mcpResource: resourceMetadata,
+    mcpLastIndexedAt: now,
+  };
+  existing.markModified('metadata');
+  await existing.save();
+
+  return { file_id: uploaded.file_id, lastIndexedAt: now, status: 'refreshed' };
+}
+
 async function fetchListItemMetadata(client: Client, uri: string): Promise<MCPResourceListItem> {
   const { resources } = await client.listResources();
   const found = resources.find((r) => r.uri === uri);

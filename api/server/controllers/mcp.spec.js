@@ -4,6 +4,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   listServerResources: jest.fn(),
   ingestResource: jest.fn(),
+  refreshResource: jest.fn(),
   MCPErrorCodes: {},
   redactServerSecrets: jest.fn((v) => v),
   redactAllServerSecrets: jest.fn((v) => v),
@@ -38,10 +39,10 @@ jest.mock('~/server/services/Files/mcpUploadAdapter', () => ({
 }));
 
 const { getMCPManager } = require('~/config');
-const { listServerResources, ingestResource } = require('@librechat/api');
+const { listServerResources, ingestResource, refreshResource } = require('@librechat/api');
 const { addAgentResourceFile } = require('~/models');
 const { createMCPUploadAdapter } = require('~/server/services/Files/mcpUploadAdapter');
-const { getMCPResources, attachMCPResource } = require('./mcp');
+const { getMCPResources, attachMCPResource, refreshMCPResource } = require('./mcp');
 
 describe('getMCPResources', () => {
   let req, res;
@@ -194,5 +195,49 @@ describe('attachMCPResource', () => {
     ingestResource.mockRejectedValue(Object.assign(new Error('boom'), { code: -32603 }));
     await attachMCPResource(req, res);
     expect(res.status).toHaveBeenCalledWith(502);
+  });
+});
+
+describe('refreshMCPResource', () => {
+  let req, res;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    req = {
+      user: { id: 'user-1' },
+      params: { serverName: 'fs' },
+      body: { uri: 'file:///a.md' },
+      config: { fileStrategy: 'local' },
+    };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    getMCPManager.mockReturnValue({
+      getConnection: jest.fn().mockResolvedValue({
+        client: { getServerCapabilities: () => ({ resources: {} }) },
+      }),
+    });
+  });
+
+  it('400 when uri is missing', async () => {
+    req.body = {};
+    await refreshMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('returns refresh result on success', async () => {
+    const now = new Date();
+    refreshResource.mockResolvedValue({ file_id: 'f-1', lastIndexedAt: now, status: 'refreshed' });
+    await refreshMCPResource(req, res);
+    expect(refreshResource).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      file_id: 'f-1',
+      lastIndexedAt: now,
+      status: 'refreshed',
+    });
+  });
+
+  it('maps status=403 errors from refreshResource to HTTP 403', async () => {
+    refreshResource.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
+    await refreshMCPResource(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });
