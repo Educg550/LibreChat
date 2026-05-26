@@ -16,7 +16,7 @@ export function MCPResourceList({ serverName, selectedUris, attachedUris, onTogg
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const allResources = useMemo(
-    () => (query.data?.pages.flatMap((p) => p.resources) ?? []),
+    () => query.data?.pages.flatMap((p) => p.resources) ?? [],
     [query.data],
   );
 
@@ -36,7 +36,8 @@ export function MCPResourceList({ serverName, selectedUris, attachedUris, onTogg
   }, [query]);
 
   if (query.isError) {
-    const status = (query.error as { response?: { status?: number } } | undefined)?.response?.status;
+    const status = (query.error as { response?: { status?: number } } | undefined)?.response
+      ?.status;
     if (status === 404) {
       return (
         <div className="p-4 text-sm text-text-secondary">
@@ -45,7 +46,7 @@ export function MCPResourceList({ serverName, selectedUris, attachedUris, onTogg
       );
     }
     return (
-      <div className="p-4 text-sm text-text-error">
+      <div className="text-text-error p-4 text-sm">
         {localize('com_ui_mcp_resource_list_error')}
       </div>
     );
@@ -57,9 +58,7 @@ export function MCPResourceList({ serverName, selectedUris, attachedUris, onTogg
 
   if (!allResources.length) {
     return (
-      <div className="p-4 text-sm text-text-secondary">
-        {localize('com_ui_mcp_resource_empty')}
-      </div>
+      <div className="p-4 text-sm text-text-secondary">{localize('com_ui_mcp_resource_empty')}</div>
     );
   }
 

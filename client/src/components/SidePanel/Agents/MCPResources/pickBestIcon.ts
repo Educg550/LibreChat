@@ -35,9 +35,7 @@ export function pickBestIcon(
   targetPx: number,
 ): string | undefined {
   if (!icons?.length) return undefined;
-  const candidates = icons.filter(
-    (i) => isImageMime(i.mimeType) && isAllowedSrc(i.src),
-  );
+  const candidates = icons.filter((i) => isImageMime(i.mimeType) && isAllowedSrc(i.src));
   if (!candidates.length) return undefined;
 
   let best = candidates[0];

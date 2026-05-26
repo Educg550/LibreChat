@@ -23,11 +23,10 @@ export function MCPResourcePickerDialog({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const [activeServer, setActiveServer] = useState<string>(mcpServerNames[0] ?? '');
-  const [selectionByServer, setSelectionByServer] = useState<Record<string, Set<string>>>(
-    () =>
-      Object.fromEntries(
-        mcpServerNames.map((s) => [s, new Set(attachedByServer[s] ?? new Set<string>())]),
-      ),
+  const [selectionByServer, setSelectionByServer] = useState<Record<string, Set<string>>>(() =>
+    Object.fromEntries(
+      mcpServerNames.map((s) => [s, new Set(attachedByServer[s] ?? new Set<string>())]),
+    ),
   );
   const [isSaving, setIsSaving] = useState(false);
   const [failures, setFailures] = useState<string[]>([]);
@@ -102,7 +101,7 @@ export function MCPResourcePickerDialog({
     <Dialog open={isOpen} onClose={() => setIsOpen(false)} className="relative z-50">
       <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <DialogPanel className="max-w-2xl w-full rounded-lg bg-surface-primary p-6">
+        <DialogPanel className="w-full max-w-2xl rounded-lg bg-surface-primary p-6">
           <DialogTitle className="text-lg font-semibold">
             {localize('com_ui_mcp_resource_picker_title')}
           </DialogTitle>
@@ -123,7 +122,7 @@ export function MCPResourcePickerDialog({
                 aria-controls={`mcp-panel-${name}`}
                 tabIndex={activeServer === name ? 0 : -1}
                 onClick={() => setActiveServer(name)}
-                className={`px-3 py-2 ${activeServer === name ? 'border-b-2 border-brand-primary' : ''}`}
+                className={`px-3 py-2 ${activeServer === name ? 'border-brand-primary border-b-2' : ''}`}
               >
                 {name}
               </button>
@@ -145,7 +144,7 @@ export function MCPResourcePickerDialog({
             </div>
           )}
           {failures.length > 0 && (
-            <div className="mt-3 text-sm text-text-error">
+            <div className="text-text-error mt-3 text-sm">
               {localize('com_ui_mcp_resource_partial_failure', { count: failures.length })}
             </div>
           )}

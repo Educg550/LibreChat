@@ -64,9 +64,7 @@ describe('File schema — MCP metadata', () => {
       },
     };
     await FileModel.create(baseDoc);
-    await expect(
-      FileModel.create({ ...baseDoc, file_id: 'f-2b' }),
-    ).rejects.toThrow(/E11000/);
+    await expect(FileModel.create({ ...baseDoc, file_id: 'f-2b' })).rejects.toThrow(/E11000/);
   });
 
   it('allows duplicate URIs across different users', async () => {

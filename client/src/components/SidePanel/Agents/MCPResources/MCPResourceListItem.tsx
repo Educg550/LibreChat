@@ -45,7 +45,7 @@ function MCPResourceListItemImpl({ resource, checked, onToggle, attached }: Prop
       ) : (
         <FileIcon size={ICON_PX} aria-hidden="true" />
       )}
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="truncate font-medium">
           {resource.title || resource.name}
           {attached && (
