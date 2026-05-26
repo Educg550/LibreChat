@@ -16,6 +16,7 @@ export enum FileSources {
   vertexai_mistral_ocr = 'vertexai_mistral_ocr',
   text = 'text',
   document_parser = 'document_parser',
+  mcp = 'mcp',
 }
 
 export const checkOpenAIStorage = (source: string) =>
@@ -102,6 +103,26 @@ export type FileConfigInput = {
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
 };
 
+export type MCPResourceIcon = {
+  src: string;
+  mimeType?: string;
+  sizes?: string[];
+};
+
+/**
+ * Mirrors the MCP "Resource" definition from
+ * https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ */
+export type MCPResourceMetadata = {
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  icons?: MCPResourceIcon[];
+  mimeType?: string;
+  size?: number;
+};
+
 export type TFile = {
   _id?: string;
   __v?: number;
@@ -159,6 +180,9 @@ export type TFile = {
      * resolve via `resolveCodeEnvRef`.
      */
     codeEnvRef?: CodeEnvRef;
+    mcpServerName?: string;
+    mcpResource?: MCPResourceMetadata;
+    mcpLastIndexedAt?: string | Date;
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;
