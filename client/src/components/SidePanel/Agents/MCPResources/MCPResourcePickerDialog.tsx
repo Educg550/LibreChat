@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { useLocalize } from '~/hooks';
 import { MCPResourceList } from './MCPResourceList';
+import { useLocalize } from '~/hooks';
 
 type Props = {
   isOpen: boolean;
@@ -38,13 +38,16 @@ export function MCPResourcePickerDialog({
     }
   }, [mcpServerNames, activeServer]);
 
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (!isOpen) return;
-    setSelectionByServer(
-      Object.fromEntries(
-        mcpServerNames.map((s) => [s, new Set(attachedByServer[s] ?? new Set<string>())]),
-      ),
-    );
+    if (isOpen && !wasOpenRef.current) {
+      setSelectionByServer(
+        Object.fromEntries(
+          mcpServerNames.map((s) => [s, new Set(attachedByServer[s] ?? new Set<string>())]),
+        ),
+      );
+    }
+    wasOpenRef.current = isOpen;
   }, [isOpen, mcpServerNames, attachedByServer]);
 
   const handleToggle = (uri: string, next: boolean) => {
@@ -106,12 +109,19 @@ export function MCPResourcePickerDialog({
           <div className="mt-2 text-xs text-text-secondary">
             {localize('com_ui_mcp_resource_templates_unsupported')}
           </div>
-          <div role="tablist" className="mt-4 flex gap-2 border-b">
+          <div
+            role="tablist"
+            aria-label={localize('com_ui_mcp_resource_servers_aria')}
+            className="mt-4 flex gap-2 border-b"
+          >
             {mcpServerNames.map((name) => (
               <button
                 key={name}
+                id={`mcp-tab-${name}`}
                 role="tab"
                 aria-selected={activeServer === name}
+                aria-controls={`mcp-panel-${name}`}
+                tabIndex={activeServer === name ? 0 : -1}
                 onClick={() => setActiveServer(name)}
                 className={`px-3 py-2 ${activeServer === name ? 'border-b-2 border-brand-primary' : ''}`}
               >
@@ -119,16 +129,21 @@ export function MCPResourcePickerDialog({
               </button>
             ))}
           </div>
-          <div className="mt-2 max-h-96 overflow-y-auto">
-            {activeServer && (
+          {activeServer && (
+            <div
+              role="tabpanel"
+              id={`mcp-panel-${activeServer}`}
+              aria-labelledby={`mcp-tab-${activeServer}`}
+              className="mt-2 max-h-96 overflow-y-auto"
+            >
               <MCPResourceList
                 serverName={activeServer}
                 selectedUris={selectionByServer[activeServer] ?? new Set<string>()}
                 attachedUris={attachedByServer[activeServer] ?? new Set<string>()}
                 onToggle={handleToggle}
               />
-            )}
-          </div>
+            </div>
+          )}
           {failures.length > 0 && (
             <div className="mt-3 text-sm text-text-error">
               {localize('com_ui_mcp_resource_partial_failure', { count: failures.length })}
