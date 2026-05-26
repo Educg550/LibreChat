@@ -8,6 +8,7 @@
 const { logger } = require('@librechat/data-schemas');
 const {
   MCPErrorCodes,
+  listServerResources,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
@@ -303,6 +304,40 @@ const updateMCPServerController = async (req, res) => {
 };
 
 /**
+ * List MCP resources for a given server.
+ * Spec: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ * @route GET /api/mcp/:serverName/resources
+ */
+const getMCPResources = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { serverName } = req.params;
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+
+    const mcpManager = getMCPManager();
+    const connection = await mcpManager.getConnection({ serverName, user: req.user });
+
+    const caps = connection.client.getServerCapabilities?.();
+    if (!caps?.resources) {
+      return res.status(404).json({ code: 'RESOURCES_UNSUPPORTED', serverName });
+    }
+
+    const result = await listServerResources({ client: connection.client, cursor });
+    return res.status(200).json(result);
+  } catch (error) {
+    if (error?.code === -32602) {
+      return res.status(400).json({ code: 'INVALID_CURSOR', message: error.message });
+    }
+    logger.error('[getMCPResources]', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * Delete MCP server
  * @route DELETE /api/mcp/servers/:serverName
  */
@@ -320,6 +355,7 @@ const deleteMCPServerController = async (req, res) => {
 
 module.exports = {
   getMCPTools,
+  getMCPResources,
   getMCPServersList,
   createMCPServerController,
   getMCPServerById,

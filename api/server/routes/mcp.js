@@ -28,6 +28,7 @@ const {
   deleteMCPServerController,
   getMCPServersList,
   getMCPServerById,
+  getMCPResources,
   getMCPTools,
 } = require('~/server/controllers/mcp');
 const {
@@ -71,6 +72,8 @@ const checkMCPCreate = generateCheckAccess({
 router.get('/tools', requireJwtAuth, async (req, res) => {
   return getMCPTools(req, res);
 });
+
+router.get('/:serverName/resources', requireJwtAuth, getMCPResources);
 
 /**
  * Initiate OAuth flow
