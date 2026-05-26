@@ -187,6 +187,17 @@ export interface MCPServerStatus {
 export interface MCPConnectionStatusResponse {
   success: boolean;
   connectionStatus: Record<string, MCPServerStatus>;
+  lastListChange?: Record<string, number>;
+  capabilities?: Record<string, MCPServerCapabilities>;
+}
+
+export interface MCPServerCapabilities {
+  resources?: { listChanged?: boolean; subscribe?: boolean };
+  tools?: { listChanged?: boolean };
+  prompts?: { listChanged?: boolean };
+  logging?: Record<string, never>;
+  completions?: Record<string, never>;
+  experimental?: Record<string, unknown>;
 }
 
 export interface MCPServerConnectionStatusResponse {
