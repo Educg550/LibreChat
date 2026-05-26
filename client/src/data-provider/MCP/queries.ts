@@ -1,4 +1,4 @@
-import { useQuery, UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, UseInfiniteQueryOptions, UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 
@@ -42,3 +42,26 @@ export const useMCPToolsQuery = <TData = t.MCPServersResponse>(
     },
   );
 };
+
+/**
+ * Lists MCP resources for a server with opaque cursor pagination.
+ *
+ * Spec:
+ *  - https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+ *  - https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/pagination
+ */
+export const useMCPResourcesQuery = (
+  serverName: string,
+  config?: UseInfiniteQueryOptions<t.MCPResourcesListResponse>,
+) =>
+  useInfiniteQuery<t.MCPResourcesListResponse>(
+    [QueryKeys.mcpResources, serverName],
+    ({ pageParam }) => dataService.listMCPResources(serverName, pageParam as string | undefined),
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+      enabled: !!serverName,
+      ...config,
+    },
+  );
