@@ -31,5 +31,6 @@ export function useMCPConnectionStatus({ enabled }: { enabled?: boolean } = {}) 
 
   return {
     connectionStatus: data?.connectionStatus,
+    capabilities: data?.capabilities,
   };
 }

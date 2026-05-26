@@ -338,7 +338,13 @@ export default function AgentConfig() {
             {/* Artifacts */}
             {artifactsEnabled && <Artifacts />}
             {/* File Search */}
-            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {fileSearchEnabled && (
+              <FileSearch
+                agent_id={agent_id}
+                files={knowledge_files}
+                mcpServerNames={mcpServerNames}
+              />
+            )}
           </div>
         )}
         {/* MCP Section */}
