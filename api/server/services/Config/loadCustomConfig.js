@@ -1,6 +1,6 @@
 const path = require('path');
 const { loadYaml, redactConfigSecretMaps, createCustomConfigLoader } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { syncCategories } = require('~/server/utils/agentCategory');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
@@ -38,7 +38,7 @@ async function loadCustomConfig(printConfig = true, options = {}) {
           'No custom categories `list` provided; only default-category toggling will run.',
         );
       }
-      await syncCategories(customCategoriesList, enableDefaultCategories);
+      await runAsSystem(() => syncCategories(customCategoriesList, enableDefaultCategories));
     }
   }
 
